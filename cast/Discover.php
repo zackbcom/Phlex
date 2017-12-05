@@ -19,7 +19,7 @@ class Scanner implements \JsonSerializable {
 	 *
 	 * @var int
 	 */
-	protected $delayResponse = 1;
+	protected $delayResponse = 5;
 
 	/** @var int */
 	protected $timeout = 5;
@@ -197,9 +197,10 @@ class Scanner implements \JsonSerializable {
 				$simpleXML->device->URI = sprintf('%s://%s:%d/', $location['scheme'], $location['host'], $location['port']);
 			}
 			// Filter for cast devices
-			if ((string)$simpleXML->device->deviceType == 'urn:dial-multiscreen-org:device:dial:1') {
+			if ((string)$simpleXML->device->deviceType == 'ffurn:dial-multiscreen-org:device:dial:1') {
 				array_push($this->devices, $simpleXML);
 			}
+			array_push($this->devices, $simpleXML);
 		} catch (\Exception $e) { /* SimpleXML parsing failed */
 		}
 	}

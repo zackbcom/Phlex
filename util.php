@@ -9,14 +9,13 @@ require_once dirname(__FILE__) . '/vendor/autoload.php';
 // Returns generated or existing API Token.
 function checkSetUser(Array $userData) {
 	// Check that we have generated an API token for our user, create and save one if none exists
+	loadSession();
 	$userName = $userData['plexUserName'];
-	$GLOBALS['config'] = new Config_Lite(dirname(__FILE__) . '/config.ini.php');
 	$apiToken = false;
-	foreach ($GLOBALS['config'] as $section => $user) {
-		if ($section != "general") {
-			if (($userName == urlencode($user['plexUserName'])) || ($userName == urlencode($user['email']))) {
-				write_log("Found matching token for " . $user['plexUserName'] . ".");
-				$apiToken = $user['apiToken'] ?? false;
+	foreach($_SESSION as $key =>$user) {
+		if (strpos($key,'user-_-')!==false) {
+			if ($user['plexUserName'] === $userName || $user['plexEmail'] === $userName) {
+				$apiToken = $user['apiToken'];
 				break;
 			}
 		}
@@ -30,12 +29,12 @@ function checkSetUser(Array $userData) {
 		write_log("API token created " . $cleaned);
 		$userString = $userData['string'];
 		unset ($userData['string']);
-		foreach ($userData as $item => $value) {
-			$GLOBALS['config']->set($userString, $item, $value);
-		}
-		saveConfig($GLOBALS['config']);
+		$_SESSION[$userString] = $userData;
+		$_SESSION['currentUser'] = $userData;
+		saveSession();
 		$_SESSION['newToken'] = true;
 	} else {
+		write_log("User $userName exists and has an apiToken.");
 		$userData['apiToken'] = $apiToken;
 	}
 	return $userData;
@@ -43,19 +42,17 @@ function checkSetUser(Array $userData) {
 
 
 function validateToken($token) {
-	$config = new Config_Lite('config.ini.php');
-	// Check that we have some form of set credentials
-	foreach ($config as $section => $setting) {
-		$checkToken = false;
-		if ($section != "general") {
+	$data = $_SESSION ?? [];
+	foreach($data as $section=>$setting) {
+	$checkToken = false;
+		if (strpos($section,'user-_-') !== false) {
+			write_log("Found user section?");
 			if (isset($setting['apiToken'])) $checkToken = $setting['apiToken'];
 			if (trim($checkToken) == trim($token)) {
-				$user = ['string' => $section, 'plexUserName' => $setting['plexUserName'], 'plexToken' => $setting['plexToken'], "plexEmail" => $setting['plexEmail'], "plexAvatar" => $setting['plexAvatar'], "plexCred" => $setting['plexCred'], "apiToken" => $setting['apiToken'],];
-				return $user;
+				return $setting;
 			}
 		}
 	}
-
 	write_log("ERROR, api token not recognized!", "ERROR");
 	return false;
 }
@@ -275,9 +272,9 @@ function setStartUrl() {
 function transcodeImage($path, $uri = "", $token = "") {
 	if (preg_match("/library/", $path)) {
 		if ($uri) $server = $uri;
-		$server = $server ?? $_SESSION['plexServerPublicUri'] ?? $_SESSION['plexServerUri'] ?? false;
+		$server = $server ?? $_SESSION['currentUser']['plexServerPublicUri'] ?? $_SESSION['currentUser']['plexServerUri'] ?? false;
 		if ($token) $serverToken = $token;
-		$token = $serverToken ?? $_SESSION['plexServerToken'];
+		$token = $serverToken ?? $_SESSION['currentUser']['plexServerToken'];
 		if ($server && $token) {
 			return $server . "/photo/:/transcode?width=1920&height=1920&minSize=1&url=" . urlencode($path) . "%3FX-Plex-Token%3D" . $token . "&X-Plex-Token=" . $token;
 		}
@@ -406,13 +403,13 @@ function isDomainAvailible($domain) {
 }
 
 function logUpdate(array $log) {
-	$config = new Config_Lite('config.ini.php');
 	$filename = file_build_path(dirname(__FILE__), 'logs', "Phlex_update.log");
 	$data['installed'] = date(DATE_RFC2822);
 	$data['commits'] = $log;
-	$config->set("general", "lastUpdate", $data['installed']);
-	saveConfig($config);
-	unset($_SESSION['updateAvailable']);
+
+	$_SESSION['lastUpdate'] = $data['installed'];
+	saveSession();
+	unset($_SESSION['currentUser']['updateAvailable']);
 	if (!file_exists($filename)) {
 		touch($filename);
 		chmod($filename, 0666);
@@ -440,15 +437,15 @@ function readUpdate() {
 }
 
 function clientHeaders() {
-	return ['X-Plex-Client-Identifier:' . checkSetDeviceID(), 'X-Plex-Target-Client-Identifier:' . $_SESSION['plexClientId'], 'X-Plex-Device:PhlexWeb', 'X-Plex-Device-Name:Phlex', 'X-Plex-Device-Screen-Resolution:1520x707,1680x1050,1920x1080', 'X-Plex-Platform:Web', 'X-Plex-Platform-Version:1.0.0', 'X-Plex-Product:Phlex', 'X-Plex-Version:3.9.1'];
+	return ['X-Plex-Client-Identifier:' . checkSetDeviceID(), 'X-Plex-Target-Client-Identifier:' . $_SESSION['currentUser']['plexClientId'], 'X-Plex-Device:PhlexWeb', 'X-Plex-Device-Name:Phlex', 'X-Plex-Device-Screen-Resolution:1520x707,1680x1050,1920x1080', 'X-Plex-Platform:Web', 'X-Plex-Platform-Version:1.0.0', 'X-Plex-Product:Phlex', 'X-Plex-Version:3.9.1'];
 }
 
 function clientHeaderArray() {
-	return ['X-Plex-Client-Identifier' => checkSetDeviceID(), 'X-Plex-Target-Client-Identifier' => $_SESSION['plexClientId'], 'X-Plex-Device' => 'PhlexWeb', 'X-Plex-Device-Name' => 'Phlex', 'X-Plex-Device-Screen-Resolution' => '1520x707,1680x1050,1920x1080', 'X-Plex-Platform' => 'Web', 'X-Plex-Platform-Version' => '1.0.0', 'X-Plex-Product' => 'Phlex', 'X-Plex-Version' => '3.9.1'];
+	return ['X-Plex-Client-Identifier' => checkSetDeviceID(), 'X-Plex-Target-Client-Identifier' => $_SESSION['currentUser']['plexClientId'], 'X-Plex-Device' => 'PhlexWeb', 'X-Plex-Device-Name' => 'Phlex', 'X-Plex-Device-Screen-Resolution' => '1520x707,1680x1050,1920x1080', 'X-Plex-Platform' => 'Web', 'X-Plex-Platform-Version' => '1.0.0', 'X-Plex-Product' => 'Phlex', 'X-Plex-Version' => '3.9.1'];
 }
 
 function clientString() {
-	$string = '&X-Plex-Product=Phlex' . '&X-Plex-Version=3.9.1' . '&X-Plex-Client-Identifier=' . checkSetDeviceID() . '&X-Plex-Platform=Web' . '&X-Plex-Platform-Version=1.0.0' . '&X-Plex-Device=PhlexWeb' . '&X-Plex-Device-Name=Phlex' . '&X-Plex-Device-Screen-Resolution=1520x707,1680x1050,1920x1080' . '&X-Plex-Token=' . $_SESSION['plexServerToken'] . '&X-Plex-Target-Client-Identifier=' . $_SESSION['plexClientId'];
+	$string = '&X-Plex-Product=Phlex' . '&X-Plex-Version=3.9.1' . '&X-Plex-Client-Identifier=' . checkSetDeviceID() . '&X-Plex-Platform=Web' . '&X-Plex-Platform-Version=1.0.0' . '&X-Plex-Device=PhlexWeb' . '&X-Plex-Device-Name=Phlex' . '&X-Plex-Device-Screen-Resolution=1520x707,1680x1050,1920x1080' . '&X-Plex-Token=' . $_SESSION['currentUser']['plexServerToken'] . '&X-Plex-Target-Client-Identifier=' . $_SESSION['currentUser']['plexClientId'];
 	return $string;
 }
 
@@ -478,6 +475,7 @@ function getCaller($custom = "foo") {
 
 // Save the specified configuration file using CONFIG_LITE
 function saveConfig(Config_Lite $inConfig) {
+	saveSession();
 	try {
 		$inConfig->save();
 	} catch (Config_Lite_Exception $e) {
@@ -491,8 +489,68 @@ function saveConfig(Config_Lite $inConfig) {
 
 }
 
+function saveSession() {
+	$sessionFile = file_build_path(dirname(__FILE__), "config.json.php");
+	if (count($_SESSION)) {
+		$data = $_SESSION;
+		if (isset($data['lang'])) unset($data['lang']);
+		if (isset($data['dlist'])) unset($data['dlist']);
+		if (isset($data['list_plexdevices'])) unset($data['list_plexdevices']);
+		if (isset($data['currentUser'])) {
+			$userData = $data['currentUser'];
+			$name = $userData['plexUserName'];
+			unset($data['currentUser']);
+			$data["user-_-$name"] = $userData;
+		}
+		$cache_new = "<?php die('Access denied'); ?>" . PHP_EOL; // Adds this to the top of the config so that PHP kills the execution if someone tries to request the config-file remotely.
+		$cache_new .= json_encode($data,JSON_PRETTY_PRINT);
+		if (file_put_contents($sessionFile, $cache_new)) write_log("Session saved successfully by " . getCaller("saveSession")); else write_log("Config save failed!", "ERROR");
+	}
+}
+
+function loadSession() {
+	$JSON = false;
+	$sessionFile = file_build_path(dirname(__FILE__), "config.json.php");
+	if (file_exists($sessionFile)) {
+		$sessionData = file_get_contents($sessionFile);
+		$rem = "<?php die('Access denied'); ?>";
+		$session = str_replace($rem, "", $sessionData);
+		try {
+			$JSON = json_decode($session, true);
+		} catch (Exception $e) {
+			write_log("JSON ERROR: " . $e);
+		}
+		if ($JSON) {
+			if (count($JSON)) {
+				foreach($JSON as $setting => $value) {
+					$_SESSION[$setting] = $value;
+				}
+			}
+		}
+	}
+	return $JSON;
+}
+
+function convertSettings() {
+	if (file_exists('config.ini.php')) {
+		write_log("Converting config file.");
+		$config = new Config_Lite('config.ini.php');
+		foreach ($config as $section => $setting) {
+			if ($section === 'general') {
+				foreach ($setting as $sub =>$subval) {
+					$_SESSION[$sub] = $subval;
+				}
+			} else {
+				$_SESSION[$section] = $setting;
+			}
+		}
+		saveSession();
+		rename('config.ini.php','config.ini.php.bak');
+	}
+}
+
 function protectURL($string) {
-	if ($_SESSION['cleanLogs']) {
+	if ($_SESSION['currentUser']['cleanLogs']) {
 		$keys = parse_url($string);
 		$parts = explode(".", $keys['host']);
 		if (count($parts) >= 2) {
@@ -593,7 +651,7 @@ function check_url($url, $post = false) {
 	if ($post) {
 		write_log("Using POST in check_url, instead of GET");
 		curl_setopt($ch, CURLOPT_POST, true);
-		curl_setopt($ch, CURLOPT_HTTPHEADER, $_SESSION['plex_headers']);
+		curl_setopt($ch, CURLOPT_HTTPHEADER, $_SESSION['currentUser']['plex_headers']);
 	}
 	/* Get the HTML or whatever is linked in $url. */
 	curl_exec($ch);
@@ -647,7 +705,7 @@ function fetchCastDevices() {
 // Sign in, get a token if we need it
 
 function signIn($credString) {
-	$token = $_SESSION['plex_token'] ?? false;
+	$token = $_SESSION['currentUser']['plex_token'] ?? false;
 	if ($token) {
 		$url = 'https://plex.tv/pms/servers.xml?X-Plex-Token=' . $token;
 		$result = curlGet($url);
@@ -656,7 +714,7 @@ function signIn($credString) {
 			$token = false;
 		} else {
 			unset($token);
-			$token['authToken'] = $_SESSION['plex_token'];
+			$token['authToken'] = $_SESSION['currentUser']['plex_token'];
 		}
 	}
 	if (!$token) {
@@ -666,23 +724,30 @@ function signIn($credString) {
 		$result = curlPost($url, false, false, $headers);
 		if ($result) {
 			$container = new SimpleXMLElement($result);
-			$container = json_decode(json_encode($container), true)['@attributes'];
+			$container = json_decode(json_encode($container), true);
 			write_log("Container: " . json_encode($container));
-			$token = $container;
+			if (is_array($container)) {
+				if (isset($container['@attributes'])) {
+					$token = $container['@attributes'];
+				} else {
+					write_log("Error retrieving token from Signin: $result","ERROR");
+				}
+			} else {
+				write_log("Error parsing signin response: $result","ERROR");
+			}
+		} else {
+			write_log("Error signing in to Plex.TV","ERROR");
 		}
 	}
 	return $token;
 }
 
 function checkSetDeviceID() {
-	$config = new Config_Lite('config.ini.php');
-	$deviceID = $config->get('general', 'deviceID', false);
-	if (!$deviceID) {
-		$deviceID = randomToken(12);
-		$config->set("general", "deviceID", $deviceID);
-		saveConfig($config);
+
+	if (!isset($_SESSION['deviceID'])) {
+		$_SESSION['deviceID'] = randomToken(12);
 	}
-	return $deviceID;
+	return $_SESSION['deviceID'];
 }
 
 function fetchDirectory($id = 1) {
@@ -693,12 +758,17 @@ function fetchDirectory($id = 1) {
 }
 
 function setDefaults() {
+	convertSettings();
+	loadSession();
+	checkSetDeviceID();
+	$messages = checkFiles();
 	ini_set("log_errors", 1);
 	ini_set('max_execution_time', 300);
-	error_reporting(E_ERROR);
+	error_reporting(E_ALL);
 	$errorLogPath = file_build_path(dirname(__FILE__), 'logs', "Phlex_error.log");
 	ini_set("error_log", $errorLogPath);
 	date_default_timezone_set((date_default_timezone_get() ? date_default_timezone_get() : "America/Chicago"));
+	return $messages;
 }
 
 function checkFiles() {
@@ -713,7 +783,7 @@ function checkFiles() {
 	$updateLogPath = file_build_path($logDir, "Phlex_update.log");
 
 	if (file_exists($oldLogPath)) unlink($oldLogPath);
-	$files = [$logPath, $errorLogPath, $updateLogPath, 'config.ini.php', 'commands.php'];
+	$files = [$logPath, $errorLogPath, $updateLogPath, 'config.json.php', 'commands.php'];
 
 	foreach ($files as $file) {
 		if (!file_exists($file)) {
@@ -749,13 +819,7 @@ function checkFiles() {
 			array_push($messages, $error);
 		}
 	}
-	try {
-		new Config_Lite('config.ini.php');
-	} catch (Config_Lite_Exception_Runtime $e) {
-		$message = "An exception occurred trying to load config.ini.php.  Please check that the directory and file are writeable by your webserver application and try again.";
-		$error = ['title' => 'Config error.', 'message' => $message, 'url' => false];
-		array_push($messages, $error);
-	};
+
 	//$testMessage = ['title'=>'Test message.','message'=>"This is a test of the emergency alert system. If this were a real emergency, you'd be screwed.",'url'=>'https://www.google.com'];
 	//array_push($messages,$testMessage);
 	return $messages;
@@ -783,7 +847,6 @@ function clearSession() {
 			setcookie($name, '', time() - 1000, '/');
 		}
 	}
-	session_start();
 	session_unset();
 	$has_session = session_status() == PHP_SESSION_ACTIVE;
 	if ($has_session) session_destroy();
@@ -834,12 +897,7 @@ function toBool($var) {
 }
 
 function checkSSL() {
-	$forceSSL = false;
-	if (file_exists(dirname(__FILE__) . "/config.ini.php")) {
-		$config = new Config_Lite('config.ini.php');
-		$forceSSL = $config->getBool('general', 'forceSsl', false);
-	}
-	return $forceSSL;
+	return $forceSSL = $_SESSION['currentUser']['forceSSL'] ?? false;
 }
 
 function checkSetLanguage($locale = false) {
@@ -869,7 +927,7 @@ function listLocales() {
 					$json = file_get_contents(file_build_path($dir, $file));
 					$json = json_decode($json, true);
 					if ($json) {
-						$selected = ($_SESSION["appLanguage"] == $locale ? 'selected' : '');
+						$selected = ($_SESSION['currentUser']["appLanguage"] == $locale ? 'selected' : '');
 						$list .= "<option value='$locale' id='$locale' $selected>$localeName</option>" . PHP_EOL;
 					}
 				}
@@ -885,18 +943,10 @@ function getDefaultLocale() {
 	$locale = false;
 	$defaultLocale = setlocale(LC_ALL, 0);
 	// If a session language is set
-	if (isset($_SESSION['appLanguage'])) {
-		$locale = $_SESSION['appLanguage'];
-	} else {
-		if (file_exists(dirname(__FILE__) . "/config.ini.php") && isset($_SESSION['plexUserName'])) {
-			$config = new Config_Lite('config.ini.php');
-			$locale = $config->get('user-_-' . $_SESSION['plexUserName'], "appLanguage", false);
-			if ($locale) $_SESSION['appLanguage'] = $locale;
-			write_log("Locale not set for session, but saved in config: $locale");
-		} else {
-			write_log("No session username, can't look in settings.", "ERROR");
-		}
+	if (isset($_SESSION['currentUser']['appLanguage'])) {
+		$locale = $_SESSION['currentUser']['appLanguage'];
 	}
+	// If not, try to detect from system
 	if (!$locale) {
 		write_log("No saved locale set, detecting from system.", "INFO");
 		if (trim($defaultLocale) != "") {
@@ -906,6 +956,7 @@ function getDefaultLocale() {
 			if (trim($locale) == "") $locale = false;
 		}
 	}
+	// If not, set to english.
 	if (!$locale) {
 		write_log("Couldn't detect a default or saved locale, defaulting to English.", "WARN");
 		$locale = "en";
@@ -1794,13 +1845,11 @@ function hasGzip() {
 }
 
 function checkUpdates($install = false) {
-	write_log("Function fired." . ($install ? " Install requested." : ""));
 	$installed = $pp = $result = false;
 	$html = '';
-	$autoUpdate = $_SESSION['autoUpdate'];
-	write_log("Auto Update is " . ($autoUpdate ? " on " : "off"));
+	$autoUpdate = isset($_SESSION['autoUpdate']) ? $_SESSION['autoUpdate'] : false;
+	write_log("Function fired." . ($install ? " Install requested." : "")." Auto Update is " . ($autoUpdate ? " on " : "off"));
 	if (checkGit()) {
-		write_log("This is a repo and GIT is available, checking for updates.");
 		try {
 			$repo = new GitRepository(dirname(__FILE__));
 			if ($repo) {
@@ -1809,9 +1858,8 @@ function checkUpdates($install = false) {
 				$revision = $repo->getRev();
 				$logHistory = readUpdate();
 				if ($revision) {
-					$config = new Config_Lite('config.ini.php');
-					$config->set('general', 'revision', $revision);
-					saveConfig($config);
+					$_SESSION['revision'] = $revision;
+					saveSession();
 				}
 				if (count($logHistory)) $installed = $logHistory[0]['installed'];
 				$header = '<div class="cardHeader">
@@ -1985,7 +2033,7 @@ function doRequest($parts, $timeout = 3) {
 	$cert = getContent(file_build_path(dirname(__FILE__), "cacert.pem"), 'https://curl.haxx.se/ca/cacert.pem');
 	if (!$cert) $cert = file_build_path(dirname(__FILE__), "cert", "cacert.pem");
 	if (is_array($parts)) {
-		if (!isset($parts['uri'])) $parts['uri'] = $_SESSION['plexServerUri'];
+		if (!isset($parts['uri'])) $parts['uri'] = $_SESSION['currentUser']['plexServerUri'];
 		if (isset($parts['query'])) {
 			if (!is_string($parts['query'])) {
 				$string = '?';

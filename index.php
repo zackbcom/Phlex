@@ -1,7 +1,7 @@
 <?php
 require_once dirname(__FILE__) . '/vendor/autoload.php';
 require_once dirname(__FILE__) . '/util.php';
-checkSetDeviceID();
+
 $forceSSL = checkSSL();
 if ((empty($_SERVER['HTTPS']) || $_SERVER['HTTPS'] == "off") && $forceSSL) {
 	$redirect = 'https://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
@@ -14,8 +14,7 @@ if ((empty($_SERVER['HTTPS']) || $_SERVER['HTTPS'] == "off") && $forceSSL) {
 
 if (substr_count($_SERVER["HTTP_ACCEPT_ENCODING"], "gzip") && hasGzip()) ob_start("ob_gzhandler"); else ob_start();
 session_start();
-setDefaults();
-$messages = checkFiles();
+$messages = setDefaults();
 if (isset($_GET['logout'])) {
 	clearSession();
 	$url = fetchUrl();
@@ -153,7 +152,7 @@ if (isset($_GET['logout'])) {
 </script>
 <div id="bodyWrap">
 	<?php
-	if (isset($_SESSION['plexToken'])) {
+	if (isset($_SESSION['currentUser']['plexToken'])) {
 		define('LOGGED_IN', true);
 		require_once dirname(__FILE__) . '/body.php';
 		echo makeBody();
@@ -179,7 +178,7 @@ if (isset($_GET['logout'])) {
 	<div class="bg bgLoaded"></div>
 </div>
 <?php
-if (!isset($_SESSION['plexToken'])) {
+if (!isset($_SESSION['currentUser']['plexToken'])) {
 	echo '
                         <div class="loginBox">
                             <div class="login-box">
