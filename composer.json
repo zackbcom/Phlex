@@ -13,6 +13,7 @@
 		"digitalhigh/radarr": "dev-master",
 		"guzzlehttp/guzzle": "^6.2",
 		"czproject/git-php": "^3.9",
-		"symfony/polyfill-mbstring": "^1.2"
+		"symfony/polyfill-mbstring": "^1.2",
+		"composer/ca-bundle": "^1.0.7"
 	}
 }
