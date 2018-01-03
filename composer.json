@@ -2,7 +2,7 @@
 	"repositories": [
 		{
 			"type": "pear",
-			"url": "https://pear.php.net"
+			"url": "pear-pear.php.net/HTTP_Request2"
 		}
 	],
 	"require": {
